@@ -1,5 +1,6 @@
 #define N_LEDS 535
 
+#include <Adafruit_NeoPixel.h>
 #include "FastLED.h"
 
 #define ENCODER_OUT_A 4 // CLK
@@ -16,8 +17,12 @@ uint8_t oldstate_c = 0;
 bool clk = false;
 uint32_t last_debounce_t;
 uint8_t debounce_delay = 50;
+int8_t wheel_dir;
+int8_t last_wheel_dir;
+uint32_t last_wheel_t = 0;
+uint8_t wheel_boost;
 
-CRGB leds[N_LEDS];
+Adafruit_NeoPixel leds(N_LEDS, LED_OUT, NEO_GRBW + NEO_KHZ800);
 
 typedef struct Mode {
   int i;
@@ -29,25 +34,16 @@ Mode mode1 = {0};
 Mode mode2 = {1};
 
 void setup() {
-  mode1.next = &mode2;
-  mode2.prev = &mode1;
-
   delay(1000);
   random16_set_seed(analogRead(0));
 
-  FastLED.addLeds<NEOPIXEL, LED_OUT>(leds, N_LEDS);
-  FastLED.setBrightness(dim8_raw(brightness));
-  FastLED.setCorrection(TypicalSMD5050);
-  for (uint16_t i = 0; i < N_LEDS; i++) {
-    leds[i] = CRGB::Black;
-  }
-  FastLED.show();
+  leds.begin();
+  leds.show();
+  leds.setBrightness(brightness);
 
   pinMode(ENCODER_OUT_A, INPUT);
   pinMode(ENCODER_OUT_B, INPUT);
   pinMode(ENCODER_OUT_C, INPUT);
-
-  FastLED.show();
 
   Serial.begin(9600);
 }
@@ -56,6 +52,11 @@ void loop() {
   state_a = digitalRead(ENCODER_OUT_A);
   state_b = digitalRead(ENCODER_OUT_B);
   state_c = digitalRead(ENCODER_OUT_C);
+
+  for (uint16_t i = 0; i < leds.numPixels(); i++) {
+    leds.setPixelColor(i, leds.Color(128, 96, 96));
+  }
+  leds.show();
 
   if (state_c != oldstate_c) {
     last_debounce_t = millis();
