@@ -192,16 +192,22 @@ void fill(uint16_t h, uint8_t s, uint8_t v) {
 
 #define SPARK_COUNT 1
 #define COIL_REP 21
-uint16_t spark_pos[SPARK_COUNT];
-float spark_vel[SPARK_COUNT];
-float spark_acc[SPARK_COUNT];
+typedef struct {
+  uint16_t x;
+  uint16_t y;
+} vec;
+
+vec spark_pos[SPARK_COUNT];
+vec spark_vel[SPARK_COUNT];
+vec spark_acc[SPARK_COUNT];
 
 void draw_sparks() {
   for (uint8_t i = 0; i < SPARK_COUNT; i++) {
-    leds.setPixelColor(spark_pos[i],                  leds.ColorHSV(0, 255, 255));
-    leds.setPixelColor(spark_pos[i] + COIL_REP,         leds.ColorHSV(8*256, 255, 255));
-    leds.setPixelColor(spark_pos[i] + COIL_REP + 1,     leds.ColorHSV(8*256, 255, 255));
-    leds.setPixelColor(spark_pos[i] + 2 * COIL_REP + 1, leds.ColorHSV(16*256, 255, 255));
+    uint16_t idx = spark_pos[i].x + spark_pos[i].y * COIL_REP;
+    leds.setPixelColor(idx,                    leds.ColorHSV(0, 255, 255));
+    leds.setPixelColor(idx + COIL_REP,         leds.ColorHSV(8*256, 255, 255));
+    leds.setPixelColor(idx + COIL_REP + 1,     leds.ColorHSV(8*256, 255, 255));
+    leds.setPixelColor(idx + 2 * COIL_REP + 1, leds.ColorHSV(16*256, 255, 255));
   }
   leds.show();
 }
@@ -222,18 +228,28 @@ void setup() {
   Serial.begin(9600);
   
   for (uint8_t i = 0; i < SPARK_COUNT; i++) {
-    spark_pos[i] = 10;//random8(22);
+    spark_pos[i] = {10, 0};//random8(22);
   }
   draw_sparks();
 }
 
 #define T 1
 void loop() {
+  leds.clear();
   for (uint8_t i = 0; i < SPARK_COUNT; i++) {
-    uint16_t new_pos = spark_pos[i] + spark_vel[i] * T + spark_acc[i] * T * T * 0.5;
-    spark_prev[i] = spark_pos[i];
-    spark_pos[i] += COIL_REP * random8(4) + random8(3) - 1;
+    vec new_pos;
+    vec new_vel;
+    vec new_acc;
+    new_pos.x = spark_pos[i].x + spark_vel[i].x * T + spark_acc[i].x * T * T * 0.5;
+    new_pos.y = spark_pos[i].y + spark_vel[i].y * T + spark_acc[i].y * T * T * 0.5;
+    new_acc = {0, -1};
+    new_vel.x = spark_vel[i].x + (spark_acc[i].x + new_acc.x) * T * 0.5;
+    new_vel.y = spark_vel[i].y + (spark_acc[i].y + new_acc.y) * T * 0.5;
+    spark_pos[i] = new_pos;
+    spark_vel[i] = new_vel;
+    spark_acc[i] = new_acc;
   }
+  draw_sparks();
   // if (knob_chg != HUE
   //     && (millis() - idle_start_t) > MODE_TIMEOUT) {
   //   knob_to_hue();
