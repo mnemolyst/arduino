@@ -190,30 +190,56 @@ void fill(uint16_t h, uint8_t s, uint8_t v) {
   leds.show();
 }
 
-#define SPARK_COUNT 1
-#define COIL_REP 21
+#define SPARK_COUNT 45
+#define COIL_REP 21.5f
 typedef struct {
-  uint16_t x;
-  uint16_t y;
-} vec;
+  double x;
+  double y;
+} Vec;
 
-vec spark_pos[SPARK_COUNT];
-vec spark_vel[SPARK_COUNT];
-vec spark_acc[SPARK_COUNT];
+Vec spark_pos[SPARK_COUNT];
+Vec spark_vel[SPARK_COUNT];
+Vec spark_acc[SPARK_COUNT];
+uint32_t last_t;
+uint32_t last_draw_t;
+uint8_t intensity = 1;
+int8_t wind_dir = 1;
 
 void draw_sparks() {
-  for (uint8_t i = 0; i < SPARK_COUNT; i++) {
-    uint16_t idx = spark_pos[i].x + spark_pos[i].y * COIL_REP;
-    leds.setPixelColor(idx,                    leds.ColorHSV(0, 255, 255));
-    leds.setPixelColor(idx + COIL_REP,         leds.ColorHSV(8*256, 255, 255));
-    leds.setPixelColor(idx + COIL_REP + 1,     leds.ColorHSV(8*256, 255, 255));
-    leds.setPixelColor(idx + 2 * COIL_REP + 1, leds.ColorHSV(16*256, 255, 255));
+  leds.clear();
+
+  leds.fill(leds.ColorHSV(0 * 256, 255, 255), 0, COIL_REP);
+  uint16_t spark_count = 5 + intensity * 5;
+  for (uint8_t i = 0; i < spark_count; i++) {
+    uint16_t idx = spark_pos[i].x + round(spark_pos[i].y) * COIL_REP;
+    uint32_t color;
+    if (idx < (2 * COIL_REP)) {
+      color = leds.ColorHSV(0 * 256, 255, 255);
+    } else if (idx < (6 * COIL_REP)) {
+      color = leds.ColorHSV(random8(4, 10) * 256, 255, 255);
+    } else {
+      color = leds.ColorHSV(14 * 256, 255, 255);
+    }
+    leds.setPixelColor(idx,                   color);
+    if (idx > 6 * COIL_REP) {
+      if (i % 2 == 0) {
+        leds.setPixelColor(idx + floor(COIL_REP), color);
+      } else {
+        leds.setPixelColor(idx + ceil(COIL_REP),  color);
+      }
+    } else {
+      leds.setPixelColor(idx + floor(COIL_REP), color);
+      leds.setPixelColor(idx + ceil(COIL_REP),  color);
+    }
+    leds.setPixelColor(idx + 2 * COIL_REP,    color);
   }
+
   leds.show();
 }
 
 void setup() {
   delay(1000);
+  randomSeed(analogRead(0));
   random16_set_seed(analogRead(0));
 
   leds.begin();
@@ -228,28 +254,83 @@ void setup() {
   Serial.begin(9600);
   
   for (uint8_t i = 0; i < SPARK_COUNT; i++) {
-    spark_pos[i] = {10, 0};//random8(22);
+    spark_pos[i] = {random8(22), 0};
+    spark_vel[i] = {0, 0};
+    spark_acc[i] = {0, 0};
   }
   draw_sparks();
 }
 
-#define T 1
-void loop() {
-  leds.clear();
+void do_verlet(uint32_t d_time) {
   for (uint8_t i = 0; i < SPARK_COUNT; i++) {
-    vec new_pos;
-    vec new_vel;
-    vec new_acc;
-    new_pos.x = spark_pos[i].x + spark_vel[i].x * T + spark_acc[i].x * T * T * 0.5;
-    new_pos.y = spark_pos[i].y + spark_vel[i].y * T + spark_acc[i].y * T * T * 0.5;
-    new_acc = {0, -1};
-    new_vel.x = spark_vel[i].x + (spark_acc[i].x + new_acc.x) * T * 0.5;
-    new_vel.y = spark_vel[i].y + (spark_acc[i].y + new_acc.y) * T * 0.5;
-    spark_pos[i] = new_pos;
-    spark_vel[i] = new_vel;
-    spark_acc[i] = new_acc;
+    Vec new_pos;
+    Vec new_vel;
+    Vec new_acc;
+    int16_t new_idx;
+    uint16_t idx = spark_pos[i].x + round(spark_pos[i].y) * COIL_REP;
+
+    // accumulate forces
+    uint8_t y_lim;
+    if (intensity <= 5) {
+      y_lim = 4 * COIL_REP;
+    } else {
+      y_lim = 6 * COIL_REP;
+    }
+    if (idx < y_lim) {
+      if (random8(5) == 0) {
+        new_acc = {wind_dir * 0.01, intensity * random(100) / 75};
+      } else {
+        new_acc = {0.0, -intensity * 0.2};
+      }
+    } else {
+      if (random8(5) == 0) {
+        new_acc = {wind_dir * 0.02, intensity * random(100) / 50};
+      } else {
+        new_acc = {0.0, -intensity * 0.1};
+      }
+    }
+    // update position
+    new_pos.x = spark_pos[i].x + spark_vel[i].x * d_time + spark_acc[i].x * d_time * d_time * 0.5;
+    new_pos.y = spark_pos[i].y + spark_vel[i].y * d_time + spark_acc[i].y * d_time * d_time * 0.5;
+    new_vel.x = spark_vel[i].x + (spark_acc[i].x + new_acc.x) * d_time * 0.5;
+    new_vel.y = spark_vel[i].y + (spark_acc[i].y + new_acc.y) * d_time * 0.5;
+    new_idx = new_pos.x + round(new_pos.y) * COIL_REP;
+    if (new_idx < 0) {
+      spark_vel[i] = { new_vel.x, -new_vel.y * 0.8 };
+      spark_acc[i] = new_acc;
+    } else if (new_idx >= LED_COUNT) { // flyaway; respawn at bottom
+      spark_pos[i] = {random8(22), 0};
+      spark_vel[i] = {0, 0};
+      spark_acc[i] = {0, 0};
+    } else {
+      spark_pos[i] = new_pos;
+      spark_vel[i] = new_vel;
+      spark_acc[i] = new_acc;
+    }
   }
-  draw_sparks();
+}
+
+void loop() {
+  uint32_t d_time = millis() - last_t;
+  do_verlet(d_time);
+  last_t = millis();
+  if (millis() - last_draw_t >= 30) {
+    draw_sparks();
+    last_draw_t = millis();
+    if (random8(20) == 0) {
+      wind_dir = -wind_dir;
+    }
+  }
+  if (wheel_dir = read_rotary()) {
+    int8_t new_intensity = intensity + wheel_dir;
+    if (new_intensity < 1) {
+      new_intensity = 1;
+    } else if (new_intensity > 9) {
+      new_intensity = 9;
+    }
+    intensity = new_intensity;
+    Serial.println(intensity);
+  }
   // if (knob_chg != HUE
   //     && (millis() - idle_start_t) > MODE_TIMEOUT) {
   //   knob_to_hue();
