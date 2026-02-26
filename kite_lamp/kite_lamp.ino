@@ -191,7 +191,7 @@ void fill(uint16_t h, uint8_t s, uint8_t v) {
 }
 
 #define SPARK_COUNT 45
-#define COIL_REP 21.5f
+#define COIL_REP 19.3f
 typedef struct {
   double x;
   double y;
@@ -220,18 +220,18 @@ void draw_sparks() {
     } else {
       color = leds.ColorHSV(14 * 256, 255, 255);
     }
-    leds.setPixelColor(idx,                   color);
+    leds.setPixelColor(idx, color);
     if (idx > 6 * COIL_REP) {
       if (i % 2 == 0) {
         leds.setPixelColor(idx + floor(COIL_REP), color);
       } else {
-        leds.setPixelColor(idx + ceil(COIL_REP),  color);
+        leds.setPixelColor(idx + ceil(COIL_REP), color);
       }
     } else {
       leds.setPixelColor(idx + floor(COIL_REP), color);
-      leds.setPixelColor(idx + ceil(COIL_REP),  color);
+      leds.setPixelColor(idx + ceil(COIL_REP), color);
     }
-    leds.setPixelColor(idx + 2 * COIL_REP,    color);
+    leds.setPixelColor(idx + ceil(2 * COIL_REP), color);
   }
 
   leds.show();
@@ -311,38 +311,41 @@ void do_verlet(uint32_t d_time) {
 }
 
 void loop() {
-  uint32_t d_time = millis() - last_t;
-  do_verlet(d_time);
-  last_t = millis();
-  if (millis() - last_draw_t >= 30) {
-    draw_sparks();
-    last_draw_t = millis();
-    if (random8(20) == 0) {
-      wind_dir = -wind_dir;
-    }
-  }
-  if (wheel_dir = read_rotary()) {
-    int8_t new_intensity = intensity + wheel_dir;
-    if (new_intensity < 1) {
-      new_intensity = 1;
-    } else if (new_intensity > 9) {
-      new_intensity = 9;
-    }
-    intensity = new_intensity;
-    Serial.println(intensity);
-  }
-  // if (knob_chg != HUE
-  //     && (millis() - idle_start_t) > MODE_TIMEOUT) {
-  //   knob_to_hue();
+  // SPARKS
+  // uint32_t d_time = millis() - last_t;
+  // do_verlet(d_time);
+  // last_t = millis();
+  // if (millis() - last_draw_t >= 30) {
+  //   draw_sparks();
+  //   last_draw_t = millis();
+  //   if (random8(20) == 0) {
+  //     wind_dir = -wind_dir;
+  //   }
   // }
-
-  // if (read_click()) {
-  //   return change_mode();
-  // }
-
   // if (wheel_dir = read_rotary()) {
-  //   change_color(wheel_dir);
+  //   int8_t new_intensity = intensity + wheel_dir;
+  //   if (new_intensity < 1) {
+  //     new_intensity = 1;
+  //   } else if (new_intensity > 9) {
+  //     new_intensity = 9;
+  //   }
+  //   intensity = new_intensity;
+  //   Serial.println(intensity);
   // }
+
+  // SOLID
+  if (knob_chg != HUE
+      && (millis() - idle_start_t) > MODE_TIMEOUT) {
+    knob_to_hue();
+  }
+
+  if (read_click()) {
+    return change_mode();
+  }
+
+  if (wheel_dir = read_rotary()) {
+    change_color(wheel_dir);
+  }
 }
 
 bool read_click() {
