@@ -49,10 +49,6 @@ uint32_t last_click_t;
 uint32_t idle_start_t = 0;
 bool should_escape_demo = false;
 
-void setup_solid() {
-  fill(hue, sat, val);
-}
-
 void knob_to_hue() {
   int16_t i_hue;
   uint16_t delta;
@@ -265,6 +261,9 @@ uint32_t last_t;
 uint32_t last_draw_t;
 
 uint32_t last_heat_change = 0;
+uint32_t next_wind_change = 0;
+int8_t wind_dir = 1;
+uint8_t intensity = 1;
 
 void setup_flame() {
   float cx, cy;
@@ -310,17 +309,12 @@ inline float face_vel(uint16_t n, uint8_t k) {
 
 uint16_t cell_xy_to_n(float px, float py) {
   uint8_t row = (int)(py / row_y + 0.5f);
-  // uint8_t col = (int)(px - row * row_x_offset + 0.5f);
-  // return cell(row * COIL_REP + col);
   return cell(row * 19.5 + px);
 }
 
 void cell_n_to_xy(uint16_t n, float *out_x, float *out_y) {
   uint8_t crow = n / 20;
-  // uint8_t ccol = n % 20;
-  // uint8_t ccol = 2 * n % 39;
   uint8_t ccol = fmod(n, 19.5);
-  // *out_x = ccol + crow * row_x_offset;
   *out_y = crow * row_y;
   *out_x = ccol;
 }
@@ -347,13 +341,8 @@ float sample_face_normal(float px, float py, uint8_t face_dir) {
 
   for (uint8_t i = 0; i < 7; i++) {
     uint16_t cn = cell(n + offsets[i]);
-    // float crow = cn / 20.0f;
-    // uint8_t ccol = cn % 20;
-    // float cx = ccol + crow * row_x_offset;
-    // float cy = crow * row_y;
     cx = cell_x[cn];
     cy = cell_y[cn];
-    // cell_n_to_xy(cn, &cx, &cy);
     float fx = cx + r * nx[face_dir];
     float fy = cy + r * ny[face_dir];
     float dx = px - fx, dy = py - fy;
@@ -378,13 +367,8 @@ float sample_temp(float px, float py) {
 
   for (uint8_t i = 0; i < 7; i++) {
     uint16_t cn = cell(n + offsets[i]);
-    // float crow = cn / 20.0f;
-    // uint8_t ccol = cn % 20;
-    // float cx = ccol + crow * row_x_offset;
-    // float cy = crow * row_y;
     cx = cell_x[cn];
     cy = cell_y[cn];
-    // cell_n_to_xy(cn, &cx, &cy);
     float dx = px - cx, dy = py - cy;
     while (dx > max_x / 2) dx -= max_x;
     while (dx < -max_x / 2) dx += max_x;
@@ -403,10 +387,14 @@ void integrate(float dt) {
     float target_v = t[i] * LIFT;
     float lift = target_v - (v[i] + w[i]) / 2;
     float u_target;
-    if (i > COIL_REP * 4 && i < COIL_REP * 5) {
-      u_target = -10.0;// + 40.0 * ((float)i / (float)(N_CELLS));
-    } else if (i > COIL_REP * 11 && i < COIL_REP * 12) {
-      u_target = 20.0;// + 40.0 * ((float)i / (float)(N_CELLS));
+    if (millis() > next_wind_change) {
+      next_wind_change = millis() + 5000 + random16(10000);
+      wind_dir = -wind_dir;
+    }
+    if (i > COIL_REP * 6 && intensity >= 2) {
+      u_target = 30.0 * wind_dir;
+    } else {
+      u_target = 0.0;
     }
     u[i] += (u_target - u[i]) * 0.75;
     v[i] += (fall + lift) * SIN60;
@@ -438,16 +426,18 @@ void solve_incompressibility(uint8_t nIters) {
   }
 }
 
-void extrapolate() {
+void heating() {
   if (millis() - last_heat_change > 100) {
     last_heat_change = millis();
     for (uint16_t i = CELLA_I; i < CELLA_I + 2 * COIL_REP; i++) {
       if (random8(3) == 0) {
-        t[i] += 1.2;
+        t[i] += 0.5f + (intensity / 3.0f);
       }
     }
   }
+}
 
+void extrapolate() {
   for (uint16_t i = 0; i < CELLA_I; i++) {
     u[i] = u[i + COIL_REP];
     v[i] = v[i + COIL_REP];
@@ -475,13 +465,8 @@ void advect_velocity(float dt) {
   float cx, cy;
 
   for (uint16_t n = CELLA_I; n <= CELLZ_I; n++) {
-    // float row = n / 20.0f;
-    // uint8_t col = n % 20;
-    // float cx = col + row * row_x_offset;
-    // float cy = row * row_y;
     cx = cell_x[n];
     cy = cell_y[n];
-    // cell_n_to_xy(cn, &cx, &cy);
 
     float vx, vy;
     reconstruct_velocity(n, &vx, &vy);
@@ -515,13 +500,8 @@ void advect_temperature(float dt) {
   float cx, cy;
 
   for (uint16_t n = CELLA_I; n <= CELLZ_I; n++) {
-    // float row = n / 20.0f;
-    // uint8_t col = n % 20;
-    // float cx = col + row * row_x_offset;
-    // float cy = row * row_y;
     cx = cell_x[n];
     cy = cell_y[n];
-    // cell_n_to_xy(cn, &cx, &cy);
 
     float vx, vy;
     reconstruct_velocity(n, &vx, &vy);
@@ -536,33 +516,31 @@ void advect_temperature(float dt) {
   memcpy(t, new_t, sizeof(new_t));
 }
 
-void cooling() {
+void cooling(float dt) {
+  float frac = pow(0.05, dt);
   for (uint16_t i = 0; i < N_CELLS; i++) {
-    t[i] *= 0.9;
+    t[i] *= frac;
   }
 }
 
-void draw() {
+void draw_flame() {
   uint32_t color;
   for (uint16_t i = 0; i < LED_COUNT; i++) {
     uint16_t n = i + CELLA_I;
+    // DEBUG direction
+    // color = leds.ColorHSV((128 + 10 * u[n])_B, 255, 255);
     if (t[n] > 0.2) {
       float f = (t[n] - 0.2) / 0.8;
-      color = leds.ColorHSV((40 * f)_B, 255, 255);
+      if (f <= 1.8) {
+        color = leds.ColorHSV((22 * f)_B, 255, 255);
+      } else if (intensity >= 2) {
+        color = leds.ColorHSV((200)_B, 255 - (f - 1.3) * 128, 255);
+      } else {
+        color = leds.ColorHSV((40)_B, 0, 0);
+      }
     } else {
       color = leds.ColorHSV(0, 0, 0);
     }
-    // if (t[n] < 0.2) {
-    //   float f = t[n] / 0.2;
-    //   color = leds.ColorHSV(0, 0, 128 * f);
-    // } else if (t[n] < 0.5) {
-    //   float f = (t[n] - 0.2) / 0.3;
-    //   color = leds.ColorHSV(0, 255 * f, 128 * f);
-    // } else {
-    //   float f = (t[n] - 0.5) / 0.5;
-    //   color = leds.ColorHSV((40 * f)_B, 255, 255);
-    // }
-    // color = leds.ColorHSV((0 + t[i + CELLA_I] * 10)_B, 255, 255);
     leds.setPixelColor(i, color);
   }
   leds.show();
@@ -579,8 +557,6 @@ typedef struct {
 Vec spark_pos[SPARK_COUNT];
 Vec spark_vel[SPARK_COUNT];
 Vec spark_acc[SPARK_COUNT];
-uint8_t intensity = 1;
-int8_t wind_dir = 1;
 
 void setup_sparks() {
   for (uint8_t i = 0; i < SPARK_COUNT; i++) {
@@ -687,7 +663,6 @@ void setup() {
 
   Serial.begin(9600);
   
-  setup_solid();
   // setup_sparks();
   setup_flame();
 }
@@ -718,8 +693,8 @@ void loop_flame() {
     int8_t new_intensity = intensity + wheel_dir;
     if (new_intensity < 1) {
       new_intensity = 1;
-    } else if (new_intensity > 9) {
-      new_intensity = 9;
+    } else if (new_intensity > 3) {
+      new_intensity = 3;
     }
     intensity = new_intensity;
     wheel_dir = 0;
@@ -737,6 +712,7 @@ void loop_flame() {
   solve_incompressibility(3);
   poll_ui();
 
+  heating();
   extrapolate();
   poll_ui();
 
@@ -746,17 +722,17 @@ void loop_flame() {
   advect_temperature(d_time_f);
   poll_ui();
 
-  cooling();
+  cooling(d_time_f);
   poll_ui();
-
-  if (should_escape_demo) {
-    should_escape_demo = false;
-    return;
-  }
 
   // limit the framerate
   if (millis() - last_draw_t > 30) {
-    draw();
+    if (should_escape_demo) {
+      should_escape_demo = false;
+      return;
+    }
+
+    draw_flame();
     last_draw_t = millis();
   }
 }
