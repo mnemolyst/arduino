@@ -470,10 +470,11 @@ void advect_velocity(float dt) {
     cy = cell_y[n];
 
     float vx, vy;
-    if (abs(vx) > 1 || abs(vy) > 1) {
-    Serial.print("n: "); Serial.println(n);
-    Serial.print("vx: "); Serial.println(vx);
-    Serial.print("vy: "); Serial.println(vy);
+    // if (abs(vx) > 1 || abs(vy) > 1) {
+    // Serial.print("n: "); Serial.println(n);
+    // Serial.print("vx: "); Serial.println(vx);
+    // Serial.print("vy: "); Serial.println(vy);
+    // }
     reconstruct_velocity(n, &vx, &vy);
 
     for (uint8_t k = 0; k < 3; k++) {
@@ -506,7 +507,7 @@ void stop_swirl() {
     // check the signs on u and v compared to incompressibility!
     net_swirl += u[i] + (v[i] - w[i]) * SIN30;
   }
-  Serial.print("net_swirl: "); Serial.println(net_swirl);
+  // Serial.print("net_swirl: "); Serial.println(net_swirl);
   float push = (net_swirl / LED_COUNT);
   for (uint16_t i = CELLA_I; i <= CELLZ_I; i++) {
     u[i] -= push / 2;
@@ -721,6 +722,7 @@ void loop_solid() {
 
 void loop_flame() {
   uint32_t d_time = millis() - last_t;
+  Serial.print("d_time: "); Serial.println(d_time);
   last_t = millis();
   float d_time_f = (float)d_time / 1000.0f;
 
