@@ -5,12 +5,13 @@
 #include <Adafruit_NeoPixel.h>
 #include "FastLED.h"
 
-#define BRIGHTNESS 100
+#define BRIGHTNESS 255
 
 #define ENCODER_DIR 1
 #define HUE_STEP 2
 #define VAL_STEP 4
 #define SAT_STEP 4
+#define _B *256
 
 #define ENCODER_OUT_A 6 // CLK
 #define ENCODER_OUT_B 7 // DT
@@ -19,8 +20,9 @@
 
 #define DEBOUNCE_DELAY 50 // 50 msec
 #define MODE_TIMEOUT 10000 // 10 sec
-#define MODE_DEMO_LEN 1500 // 1.5 sec
+#define MODE_DEMO_LEN 1000 // 1 sec
 #define DEMO_T_STEP 25
+#define DOUBLE_CLICK_LIM 250 // msec
 
 Adafruit_NeoPixel leds(LED_COUNT, LED_OUT, NEO_GRBW + NEO_KHZ800);
 
@@ -37,11 +39,11 @@ enum KNOB_CHG {
   SAT,
   VAL
 };
-KNOB_CHG knob_chg = HUE;
+KNOB_CHG knob_chg = VAL;
 
-int32_t hue = 12 * 256;
-int16_t sat = 255;
-int16_t val = 64;
+int32_t hue = 6;
+int16_t sat = 224;
+int16_t val = 20;
 
 int8_t wheel_dir = 0;
 bool did_click = false;
@@ -77,13 +79,13 @@ void knob_to_hue() {
     } else {
       csec_done = (delta / DEMO_T_STEP) * DEMO_T_STEP;
     }
-    i_hue = hue + (uint16_t)(65536 * delta / MODE_DEMO_LEN);
-    while (i_hue > 65535) {
-      i_hue -= 65536;
+    i_hue = hue + (256 * delta / MODE_DEMO_LEN);
+    while (i_hue > 255) {
+      i_hue -= 256;
     }
-    fill(i_hue, sat, val);
+    fill((i_hue)_B, sat, val);
   }
-  fill(hue, sat, val);
+  fill((hue)_B, sat, val);
 #endif
 }
 
@@ -123,9 +125,9 @@ void knob_to_sat() {
     if (i_sat < 0) {
       i_sat = 0;
     }
-    fill(hue, i_sat, val);
+    fill((hue)_B, i_sat, val);
   }
-  fill(hue, sat, val);
+  fill((hue)_B, sat, val);
 #endif
 }
 
@@ -165,22 +167,22 @@ void knob_to_val() {
     if (i_val < 0) {
       i_val = 0;
     }
-    fill(hue, sat, i_val);
+    fill((hue)_B, sat, i_val);
   }
-  fill(hue, sat, val);
+  fill((hue)_B, sat, val);
 #endif
 }
 
 void change_mode() {
   switch (knob_chg) {
     case HUE:
-      knob_to_val();
+      knob_to_sat();
       break;
     case SAT:
-      knob_to_hue();
+      knob_to_val();
       break;
     case VAL:
-      knob_to_sat();
+      knob_to_hue();
       break;
     default:
       knob_to_hue();
@@ -191,12 +193,12 @@ void change_mode() {
 void change_color(int8_t wheel_dir) {
   switch (knob_chg) {
     case HUE:
-      hue += HUE_STEP * 256 * wheel_dir;
+      hue += HUE_STEP * wheel_dir;
       if (hue < 0) {
-        hue += 65536;
+        hue += 256;
       }
-      if (hue > 65535) {
-        hue -= 65536;
+      if (hue > 255) {
+        hue -= 256;
       }
       break;
     case SAT:
@@ -219,7 +221,7 @@ void change_color(int8_t wheel_dir) {
       break;
   }
 
-  fill(hue, sat, val);
+  fill((hue)_B, sat, val);
 }
 
 void fill(uint16_t h, uint8_t s, uint8_t v) {
@@ -236,11 +238,9 @@ void fill(uint16_t h, uint8_t s, uint8_t v) {
 #define CELLA_I  COIL_REP
 #define CELLZ_I  CELLA_I + LED_COUNT - 1
 
-#define _B *256
-
 // physical/math constants
 static const float G = 10;
-static const float LIFT = 60;
+static const float LIFT = 40;
 static const float SIN30 = 0.5;
 static const float SIN60 = 0.866;
 
@@ -264,6 +264,7 @@ uint32_t last_heat_change = 0;
 uint32_t next_wind_change = 0;
 int8_t wind_dir = 1;
 uint8_t intensity = 1;
+float total_heat;
 
 void setup_flame() {
   float cx, cy;
@@ -385,7 +386,7 @@ void integrate(float dt) {
   for (uint16_t i = 0; i < N_CELLS; i++) {
     float fall = -G * dt;
     float target_v = t[i] * LIFT;
-    float lift = target_v - (v[i] + w[i]) / 2;
+    float lift = target_v - (v[i] + w[i]) / (SIN60 * 2);
     float u_target;
     if (millis() > next_wind_change) {
       next_wind_change = millis() + 5000 + random16(10000);
@@ -430,7 +431,7 @@ void heating() {
   if (millis() - last_heat_change > 100) {
     last_heat_change = millis();
     for (uint16_t i = CELLA_I; i < CELLA_I + 2 * COIL_REP; i++) {
-      if (random8(3) == 0) {
+      if ((i % 5) == 0 || random8(15) < 2) {
         t[i] += 0.5f + (intensity / 3.0f);
       }
     }
@@ -469,6 +470,10 @@ void advect_velocity(float dt) {
     cy = cell_y[n];
 
     float vx, vy;
+    if (abs(vx) > 1 || abs(vy) > 1) {
+    Serial.print("n: "); Serial.println(n);
+    Serial.print("vx: "); Serial.println(vx);
+    Serial.print("vy: "); Serial.println(vy);
     reconstruct_velocity(n, &vx, &vy);
 
     for (uint8_t k = 0; k < 3; k++) {
@@ -494,6 +499,22 @@ void advect_velocity(float dt) {
   memcpy(w, new_w, sizeof(new_w));
 }
 
+void stop_swirl() {
+  float net_swirl = 0;
+
+  for (uint16_t i = CELLA_I; i <= CELLZ_I; i++) {
+    // check the signs on u and v compared to incompressibility!
+    net_swirl += u[i] + (v[i] - w[i]) * SIN30;
+  }
+  Serial.print("net_swirl: "); Serial.println(net_swirl);
+  float push = (net_swirl / LED_COUNT);
+  for (uint16_t i = CELLA_I; i <= CELLZ_I; i++) {
+    u[i] -= push / 2;
+    v[i] -= push / 2;
+    w[i] += push / 2;
+  }
+}
+
 void advect_temperature(float dt) {
 
   static const float r = 0.5f;
@@ -517,9 +538,16 @@ void advect_temperature(float dt) {
 }
 
 void cooling(float dt) {
-  float frac = pow(0.05, dt);
-  for (uint16_t i = 0; i < N_CELLS; i++) {
-    t[i] *= frac;
+  total_heat = 0;
+  float low_frac = pow(0.08, dt);
+  float high_frac = pow(0.05, dt);
+  for (uint16_t i = 0; i < N_CELLS / 2; i++) {
+    total_heat += t[i];
+    t[i] *= low_frac;
+  }
+  for (uint16_t i = N_CELLS / 2; i < N_CELLS; i++) {
+    total_heat += t[i];
+    t[i] *= high_frac;
   }
 }
 
@@ -541,6 +569,11 @@ void draw_flame() {
     } else {
       color = leds.ColorHSV(0, 0, 0);
     }
+    // uint16_t hue = 8000 * (t[n] / total_heat);
+    // if (hue > 40) {
+    //   hue = 40;
+    // }
+    // color = leds.ColorHSV((hue)_B, 255, 255);
     leds.setPixelColor(i, color);
   }
   leds.show();
@@ -665,6 +698,8 @@ void setup() {
   
   // setup_sparks();
   setup_flame();
+
+  fill((hue)_B, sat, val);
 }
 
 void loop_solid() {
@@ -691,10 +726,21 @@ void loop_flame() {
 
   if (wheel_dir) {
     int8_t new_intensity = intensity + wheel_dir;
-    if (new_intensity < 1) {
-      new_intensity = 1;
-    } else if (new_intensity > 3) {
-      new_intensity = 3;
+    switch (wheel_dir) {
+      case -1:
+        if (new_intensity < 1) {
+          new_intensity = 1;
+        } else if (new_intensity > 3) {
+          new_intensity = 3;
+        }
+        break;
+      case 1:
+        if (new_intensity < 1) {
+          new_intensity = 1;
+        } else if (new_intensity > 12) {
+          new_intensity = 12;
+        }
+        break;
     }
     intensity = new_intensity;
     wheel_dir = 0;
@@ -705,6 +751,9 @@ void loop_flame() {
     did_click = false;
     Serial.print("did_click: "); Serial.println(did_click);
   }
+
+  stop_swirl();
+  poll_ui();
 
   integrate(d_time_f);
   poll_ui();
@@ -746,7 +795,7 @@ void poll_ui() {
     did_click = this_did_click;
 
     if (did_click) {
-      if (millis() - last_click_t < 500) {
+      if (millis() - last_click_t < DOUBLE_CLICK_LIM) {
         should_escape_demo = true;
         did_click = false;
         rotate_mode();
@@ -762,7 +811,7 @@ void rotate_mode() {
   } else if (mode == MODE_FLAME) {
     mode = MODE_SOLID;
     knob_chg = HUE;
-    fill(hue, sat, val);
+    fill((hue)_B, sat, val);
   }
 }
 
