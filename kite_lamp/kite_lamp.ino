@@ -237,12 +237,15 @@ void fill(uint16_t h, uint8_t s, uint8_t v) {
 #define N_CELLS  LED_COUNT + 2 * COIL_REP
 #define CELLA_I  COIL_REP
 #define CELLZ_I  CELLA_I + LED_COUNT - 1
+#define SHIFT 16
+#define SHIFT_MASK ((1 << SHIFT) - 1) // 65535
 
 // physical/math constants
 static const float G = 10;
 static const float LIFT = 40;
 static const float SIN30 = 0.5;
 static const float SIN60 = 0.866;
+static const float _1_2SIN60 = 1.0 / (2 * SIN60);
 
 float cell_x[N_CELLS];
 float cell_y[N_CELLS];
@@ -294,6 +297,7 @@ const float nx[6] = { 1.0f,  0.5f, -0.5f, -1.0f, -0.5f,  0.5f };
 const float ny[6] = { 0.0f,  0.866025f,  0.866025f,  0.0f, -0.866025f, -0.866025f };
 const float row_x_offset = 0.5f;
 const float row_y = 0.866025f;
+const float _1row_y = 1 / row_y;
 const float max_x = 19%20 + 240/20 * 0.5 + 0.5;
 
 inline float face_vel(uint16_t n, uint8_t k) {
@@ -309,7 +313,7 @@ inline float face_vel(uint16_t n, uint8_t k) {
 }
 
 uint16_t cell_xy_to_n(float px, float py) {
-  uint8_t row = (int)(py / row_y + 0.5f);
+  uint8_t row = (int)(py * _1row_y + 0.5f);
   return cell(row * 19.5 + px);
 }
 
@@ -321,14 +325,15 @@ void cell_n_to_xy(uint16_t n, float *out_x, float *out_y) {
 }
 
 void reconstruct_velocity(uint16_t n, float *out_x, float *out_y) {
+  static const float _1_3 = 1.0f / 3.0;
   float sum_x = 0.0f, sum_y = 0.0f;
   for (uint8_t f = 0; f < 6; f++) {
     float vel = face_vel(n, f);
     sum_x += vel * nx[f];
     sum_y += vel * ny[f];
   }
-  *out_x = sum_x / 3.0f;
-  *out_y = sum_y / 3.0f;
+  *out_x = sum_x * _1_3;
+  *out_y = sum_y * _1_3;
 }
 
 float sample_face_normal(float px, float py, uint8_t face_dir) {
@@ -381,25 +386,28 @@ float sample_temp(float px, float py) {
   return total_v / total_w;
 }
 
-// add gravity and lift forces
+// add gravity, lift, and wind forces
 void integrate(float dt) {
-  for (uint16_t i = 0; i < N_CELLS; i++) {
+  float net_swirl = 0;
+  float wind_push;
+  if (millis() > next_wind_change) {
+    next_wind_change = millis() + 1000 + random16(9000);
+    wind_dir = -wind_dir;
+    Serial.print("wind_dir: "); Serial.println(wind_dir);
+  }
+  for (uint16_t i = CELLA_I; i <= CELLZ_I; i++) {
+    // check the signs on u and v compared to incompressibility!
+    net_swirl += u[i] + (v[i] - w[i]) * SIN30;
+  }
+  wind_push = (net_swirl / LED_COUNT * 0.5) - (3 * intensity * wind_dir);
+
+  for (uint16_t i = CELLA_I; i <= CELLZ_I; i++) {
     float fall = -G * dt;
     float target_v = t[i] * LIFT;
-    float lift = target_v - (v[i] + w[i]) / (SIN60 * 2);
-    float u_target;
-    if (millis() > next_wind_change) {
-      next_wind_change = millis() + 5000 + random16(10000);
-      wind_dir = -wind_dir;
-    }
-    if (i > COIL_REP * 6 && intensity >= 2) {
-      u_target = 30.0 * wind_dir;
-    } else {
-      u_target = 0.0;
-    }
-    u[i] += (u_target - u[i]) * 0.75;
-    v[i] += (fall + lift) * SIN60;
-    w[i] += (fall + lift) * SIN60;
+    float lift = target_v - (v[i] + w[i]) * _1_2SIN60;
+    u[i] += -wind_push;
+    v[i] += (fall + lift) * SIN60 - wind_push;
+    w[i] += (fall + lift) * SIN60 + wind_push;
   }
 }
 
@@ -416,6 +424,7 @@ void solve_incompressibility(uint8_t nIters) {
       if (s == 0) { return; }
 
       float div = u[i] - u[i - 1] + v[i] - v[i - COIL_REP] + w[i] - w[i - COIL_REP + 1];
+      // Serial.print("div before: "); Serial.println(div);
       float push = -div / s * OVERRELAX;
       u[i] += push * su2;
       u[i - 1] -= push * su1;
@@ -423,26 +432,30 @@ void solve_incompressibility(uint8_t nIters) {
       v[i - COIL_REP] -= push * sv1;
       w[i] += push * sw2;
       w[i - COIL_REP + 1] -= push * sw1;
+      div = u[i] - u[i - 1] + v[i] - v[i - COIL_REP] + w[i] - w[i - COIL_REP + 1];
+      // Serial.print("div after: "); Serial.println(div);
     }
   }
 }
 
 void heating() {
-  if (millis() - last_heat_change > 100) {
-    last_heat_change = millis();
-    for (uint16_t i = CELLA_I; i < CELLA_I + 2 * COIL_REP; i++) {
-      if ((i % 5) == 0 || random8(15) < 2) {
-        t[i] += 0.5f + (intensity / 3.0f);
-      }
+  for (uint16_t i = CELLA_I; i < CELLA_I + COIL_REP - 1; i++) {
+    if (random8(3) == 0) {
+      t[i] += 0.25f + intensity * 0.2f;
+    }
+  }
+  for (uint16_t i = CELLA_I + COIL_REP; i < CELLA_I + 2 * COIL_REP - 2; i++) {
+    if (random8(3) == 0) {
+      t[i] += 0.25f + intensity * 0.2f;
     }
   }
 }
 
 void extrapolate() {
   for (uint16_t i = 0; i < CELLA_I; i++) {
-    u[i] = u[i + COIL_REP];
-    v[i] = v[i + COIL_REP];
-    w[i] = w[i + COIL_REP];
+    u[i] = 0;
+    v[i] = 0;
+    w[i] = 0;
     t[i] = t[i + COIL_REP];
   }
   for (uint16_t i = CELLZ_I + 1; i < N_CELLS; i++) {
@@ -500,24 +513,7 @@ void advect_velocity(float dt) {
   memcpy(w, new_w, sizeof(new_w));
 }
 
-void stop_swirl() {
-  float net_swirl = 0;
-
-  for (uint16_t i = CELLA_I; i <= CELLZ_I; i++) {
-    // check the signs on u and v compared to incompressibility!
-    net_swirl += u[i] + (v[i] - w[i]) * SIN30;
-  }
-  // Serial.print("net_swirl: "); Serial.println(net_swirl);
-  float push = (net_swirl / LED_COUNT);
-  for (uint16_t i = CELLA_I; i <= CELLZ_I; i++) {
-    u[i] -= push / 2;
-    v[i] -= push / 2;
-    w[i] += push / 2;
-  }
-}
-
 void advect_temperature(float dt) {
-
   static const float r = 0.5f;
   float cx, cy;
 
@@ -540,13 +536,8 @@ void advect_temperature(float dt) {
 
 void cooling(float dt) {
   total_heat = 0;
-  float low_frac = pow(0.08, dt);
   float high_frac = pow(0.05, dt);
-  for (uint16_t i = 0; i < N_CELLS / 2; i++) {
-    total_heat += t[i];
-    t[i] *= low_frac;
-  }
-  for (uint16_t i = N_CELLS / 2; i < N_CELLS; i++) {
+  for (uint16_t i = CELLA_I; i <= CELLZ_I; i++) {
     total_heat += t[i];
     t[i] *= high_frac;
   }
@@ -557,19 +548,18 @@ void draw_flame() {
   for (uint16_t i = 0; i < LED_COUNT; i++) {
     uint16_t n = i + CELLA_I;
     // DEBUG direction
-    // color = leds.ColorHSV((128 + 10 * u[n])_B, 255, 255);
-    if (t[n] > 0.2) {
-      float f = (t[n] - 0.2) / 0.8;
-      if (f <= 1.8) {
-        color = leds.ColorHSV((22 * f)_B, 255, 255);
-      } else if (intensity >= 2) {
-        color = leds.ColorHSV((200)_B, 255 - (f - 1.3) * 128, 255);
-      } else {
-        color = leds.ColorHSV((40)_B, 0, 0);
-      }
+    // color = leds.ColorHSV((0)_B, 255, 10 * (u[n] + v[n] * SIN30 - w[n] * SIN30));
+
+    float temp = t[n];
+    if (temp > 3.8) {
+      // color = leds.ColorHSV((200)_B, 255 - (temp - 2.0) * 128, 255);
+      color = leds.ColorHSV((36)_B, 255 - (temp - 2.0) * 50, 255);
+    } else if (temp > 0.2) {
+      color = leds.ColorHSV((10 * (temp - 0.2))_B, 255, 255);
     } else {
-      color = leds.ColorHSV(0, 0, 0);
+      color = leds.ColorHSV(0, 255, 100 * temp);
     }
+
     // uint16_t hue = 8000 * (t[n] / total_heat);
     // if (hue > 40) {
     //   hue = 40;
@@ -722,7 +712,6 @@ void loop_solid() {
 
 void loop_flame() {
   uint32_t d_time = millis() - last_t;
-  Serial.print("d_time: "); Serial.println(d_time);
   last_t = millis();
   float d_time_f = (float)d_time / 1000.0f;
 
@@ -732,15 +721,11 @@ void loop_flame() {
       case -1:
         if (new_intensity < 1) {
           new_intensity = 1;
-        } else if (new_intensity > 3) {
-          new_intensity = 3;
         }
         break;
       case 1:
-        if (new_intensity < 1) {
-          new_intensity = 1;
-        } else if (new_intensity > 12) {
-          new_intensity = 12;
+        if (new_intensity > 6) {
+          new_intensity = 6;
         }
         break;
     }
@@ -753,9 +738,6 @@ void loop_flame() {
     did_click = false;
     Serial.print("did_click: "); Serial.println(did_click);
   }
-
-  stop_swirl();
-  poll_ui();
 
   integrate(d_time_f);
   poll_ui();
