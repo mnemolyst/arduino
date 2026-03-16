@@ -18,28 +18,33 @@
 #define ENCODER_OUT_C 8 // SW
 #define LED_OUT 9
 
-#define DEBOUNCE_DELAY 50 // 50 msec
-#define MODE_TIMEOUT 10000 // 10 sec
-#define MODE_DEMO_LEN 1000 // 1 sec
+#define DEBOUNCE_DELAY 50 // msec
+#define MODE_TIMEOUT 10000 // msec
+#define MODE_DEMO_LEN 1000 // msec
 #define DEMO_T_STEP 25
 #define DOUBLE_CLICK_LIM 250 // msec
 
 Adafruit_NeoPixel leds(LED_COUNT, LED_OUT, NEO_GRBW + NEO_KHZ800);
+
+void fill(uint16_t h, uint8_t s, uint8_t v) {
+  leds.fill(leds.ColorHSV(h, s, v));
+  leds.show();
+}
 
 enum MODE {
   MODE_SOLID,
   MODE_FLAME
 };
 
-MODE mode = MODE_FLAME;
+MODE mode = MODE_SOLID;
 
 // *** START SOLID ***
-enum KNOB_CHG {
+enum SOLID_KNOB_CHG {
   HUE,
   SAT,
   VAL
 };
-KNOB_CHG knob_chg = VAL;
+SOLID_KNOB_CHG solid_knob_chg = VAL;
 
 int32_t hue = 6;
 int16_t sat = 224;
@@ -55,8 +60,10 @@ void knob_to_hue() {
   int16_t i_hue;
   uint16_t delta;
   uint32_t start_t = millis();
+  const uint8_t spread = 10;
+  double start_v = 0;
   uint16_t csec_done = 0;
-  knob_chg = HUE;
+  solid_knob_chg = HUE;
 #ifdef DEMO
   should_escape_demo = false;
   while ((delta = millis() - start_t) < MODE_DEMO_LEN) {
@@ -67,21 +74,24 @@ void knob_to_hue() {
     }
     if (did_click) {
       did_click = false;
-      return change_mode();
+      return change_solid_mode();
     }
     if (wheel_dir) {
-      change_color(wheel_dir);
       wheel_dir = 0;
-      return;
+      return change_color();
     }
     if (delta < csec_done + DEMO_T_STEP) {
       continue;
     } else {
       csec_done = (delta / DEMO_T_STEP) * DEMO_T_STEP;
     }
-    i_hue = hue + (256 * delta / MODE_DEMO_LEN);
-    while (i_hue > 255) {
+    // i_hue = hue + (256 * delta / MODE_DEMO_LEN);
+    i_hue = hue + spread * sin(start_v + (delta * 2 * M_PI / MODE_DEMO_LEN));
+    if (i_hue > 255) {
       i_hue -= 256;
+    }
+    if (i_hue < 0) {
+      i_hue += 256;
     }
     fill((i_hue)_B, sat, val);
   }
@@ -93,9 +103,13 @@ void knob_to_sat() {
   int16_t i_sat;
   uint16_t delta;
   uint32_t start_t = millis();
-  double start_v = asin((sat - 127.5) / 127.5);
+  const uint8_t spread = 70;
+  int16_t low_sat = max(0, sat - spread - max(0, sat - 255 + spread));
+  int16_t hi_sat = min(255, sat + spread + max(0, spread - sat));
+  int16_t mid_sat = (low_sat + hi_sat) * 0.5;
+  double start_v = asin((sat - mid_sat) / (double)spread);
   uint16_t csec_done = 0;
-  knob_chg = SAT;
+  solid_knob_chg = SAT;
 #ifdef DEMO
   should_escape_demo = false;
   while ((delta = millis() - start_t) < MODE_DEMO_LEN) {
@@ -106,19 +120,18 @@ void knob_to_sat() {
     }
     if (did_click) {
       did_click = false;
-      return change_mode();
+      return change_solid_mode();
     }
     if (wheel_dir) {
-      change_color(wheel_dir);
       wheel_dir = 0;
-      return;
+      return change_color();
     }
     if (delta < csec_done + DEMO_T_STEP) {
       continue;
     } else {
       csec_done = (delta / DEMO_T_STEP) * DEMO_T_STEP;
     }
-    i_sat = (sin(start_v + (delta * 2 * M_PI / MODE_DEMO_LEN)) + 1) * 127.5;
+    i_sat = mid_sat + spread * sin(start_v + (delta * 2 * M_PI / MODE_DEMO_LEN));
     if (i_sat > 255) {
       i_sat = 255;
     }
@@ -135,9 +148,13 @@ void knob_to_val() {
   int16_t i_val;
   uint16_t delta;
   uint32_t start_t = millis();
-  double start_v = asin((val - 127.5) / 127.5);
+  const uint8_t spread = 40;
+  int16_t low_val = max(0, val - spread - max(0, val - 255 + spread));
+  int16_t hi_val = min(255, val + spread + max(0, spread - val));
+  int16_t mid_val = (low_val + hi_val) * 0.5;
+  double start_v = asin((val - mid_val) / (double)spread);
   uint16_t csec_done = 0;
-  knob_chg = VAL;
+  solid_knob_chg = VAL;
 #ifdef DEMO
   should_escape_demo = false;
   while ((delta = millis() - start_t) < MODE_DEMO_LEN) {
@@ -148,19 +165,18 @@ void knob_to_val() {
     }
     if (did_click) {
       did_click = false;
-      return change_mode();
+      return change_solid_mode();
     }
     if (wheel_dir) {
-      change_color(wheel_dir);
       wheel_dir = 0;
-      return;
+      return change_color();
     }
     if (delta < csec_done + DEMO_T_STEP) {
       continue;
     } else {
       csec_done = (delta / DEMO_T_STEP) * DEMO_T_STEP;
     }
-    i_val = (sin(start_v + (delta * 2 * M_PI / MODE_DEMO_LEN)) + 1) * 127.5;
+    i_val = mid_val + spread * sin(start_v + (delta * 2 * M_PI / MODE_DEMO_LEN));
     if (i_val > 255) {
       i_val = 255;
     }
@@ -173,8 +189,8 @@ void knob_to_val() {
 #endif
 }
 
-void change_mode() {
-  switch (knob_chg) {
+void change_solid_mode() {
+  switch (solid_knob_chg) {
     case HUE:
       knob_to_sat();
       break;
@@ -190,8 +206,8 @@ void change_mode() {
   }
 }
 
-void change_color(int8_t wheel_dir) {
-  switch (knob_chg) {
+void change_color() {
+  switch (solid_knob_chg) {
     case HUE:
       hue += HUE_STEP * wheel_dir;
       if (hue < 0) {
@@ -224,9 +240,21 @@ void change_color(int8_t wheel_dir) {
   fill((hue)_B, sat, val);
 }
 
-void fill(uint16_t h, uint8_t s, uint8_t v) {
-  leds.fill(leds.ColorHSV(h, s, v), 0, LED_COUNT);
-  leds.show();
+void loop_solid() {
+  if (solid_knob_chg != HUE
+      && (millis() - idle_start_t) > MODE_TIMEOUT) {
+    knob_to_hue();
+  }
+
+  if (did_click) {
+    did_click = false;
+    return change_solid_mode();
+  }
+
+  if (wheel_dir) {
+    change_color();
+    wheel_dir = 0;
+  }
 }
 // *** END SOLID ***
 
@@ -239,13 +267,30 @@ void fill(uint16_t h, uint8_t s, uint8_t v) {
 #define CELLZ_I  CELLA_I + LED_COUNT - 1
 #define SHIFT 16
 #define SHIFT_MASK ((1 << SHIFT) - 1) // 65535
+#define MAX_INTENSITY 6
 
 // physical/math constants
 static const float G = 10;
-static const float LIFT = 40;
+static const float LIFT = 30;
 static const float SIN30 = 0.5;
 static const float SIN60 = 0.866;
 static const float _1_2SIN60 = 1.0 / (2 * SIN60);
+
+enum FLAME_KNOB_CHG {
+  INTENSITY,
+  PALETTE,
+  VALUE
+};
+FLAME_KNOB_CHG flame_knob_chg = INTENSITY;
+
+enum FLAME_PALETTE {
+  NORMAL,
+  COOL,
+  PURPLE,
+  PASTEL,
+  RAINBOW
+};
+FLAME_PALETTE flame_palette = NORMAL;
 
 float cell_x[N_CELLS];
 float cell_y[N_CELLS];
@@ -268,6 +313,7 @@ uint32_t next_wind_change = 0;
 int8_t wind_dir = 1;
 uint8_t intensity = 1;
 float total_heat;
+uint16_t rainbow_offset = 0;
 
 void setup_flame() {
   float cx, cy;
@@ -285,6 +331,26 @@ void setup_flame() {
     cell_x[i] = cx;
     cell_y[i] = cy;
   }
+}
+
+void blink() {
+  fill(0, 0, 0);
+  delay(50);
+}
+
+void knob_to_intensity() {
+  flame_knob_chg = INTENSITY;
+  blink();
+}
+
+void knob_to_palette() {
+  flame_knob_chg = PALETTE;
+  blink();
+}
+
+void knob_to_value() {
+  flame_knob_chg = VALUE;
+  blink();
 }
 
 inline uint16_t cell(int16_t n) {
@@ -393,7 +459,6 @@ void integrate(float dt) {
   if (millis() > next_wind_change) {
     next_wind_change = millis() + 1000 + random16(9000);
     wind_dir = -wind_dir;
-    Serial.print("wind_dir: "); Serial.println(wind_dir);
   }
   for (uint16_t i = CELLA_I; i <= CELLZ_I; i++) {
     // check the signs on u and v compared to incompressibility!
@@ -424,7 +489,6 @@ void solve_incompressibility(uint8_t nIters) {
       if (s == 0) { return; }
 
       float div = u[i] - u[i - 1] + v[i] - v[i - COIL_REP] + w[i] - w[i - COIL_REP + 1];
-      // Serial.print("div before: "); Serial.println(div);
       float push = -div / s * OVERRELAX;
       u[i] += push * su2;
       u[i - 1] -= push * su1;
@@ -433,20 +497,19 @@ void solve_incompressibility(uint8_t nIters) {
       w[i] += push * sw2;
       w[i - COIL_REP + 1] -= push * sw1;
       div = u[i] - u[i - 1] + v[i] - v[i - COIL_REP] + w[i] - w[i - COIL_REP + 1];
-      // Serial.print("div after: "); Serial.println(div);
     }
   }
 }
 
 void heating() {
   for (uint16_t i = CELLA_I; i < CELLA_I + COIL_REP - 1; i++) {
-    if (random8(3) == 0) {
-      t[i] += 0.25f + intensity * 0.2f;
+    if (random8(6) == 0) {
+      t[i] += 0.5f + intensity * 0.4f;
     }
   }
-  for (uint16_t i = CELLA_I + COIL_REP; i < CELLA_I + 2 * COIL_REP - 2; i++) {
-    if (random8(3) == 0) {
-      t[i] += 0.25f + intensity * 0.2f;
+  for (uint16_t i = CELLA_I + COIL_REP + 1; i < CELLA_I + 2 * COIL_REP - 2; i++) {
+    if (random8(6) == 0) {
+      t[i] += 0.5f + intensity * 0.4f;
     }
   }
 }
@@ -483,11 +546,6 @@ void advect_velocity(float dt) {
     cy = cell_y[n];
 
     float vx, vy;
-    // if (abs(vx) > 1 || abs(vy) > 1) {
-    // Serial.print("n: "); Serial.println(n);
-    // Serial.print("vx: "); Serial.println(vx);
-    // Serial.print("vy: "); Serial.println(vy);
-    // }
     reconstruct_velocity(n, &vx, &vy);
 
     for (uint8_t k = 0; k < 3; k++) {
@@ -545,29 +603,183 @@ void cooling(float dt) {
 
 void draw_flame() {
   uint32_t color;
-  for (uint16_t i = 0; i < LED_COUNT; i++) {
+  uint8_t offset;
+  uint8_t spread;
+  switch (flame_palette) {
+    case NORMAL:
+      offset = 0;
+      spread = 36;
+      break;
+    case COOL:
+      offset = 100;
+      spread = 100;
+      break;
+    case PURPLE:
+      offset = 200;
+      spread = 55;
+      break;
+    case PASTEL:
+      offset = 0;
+      spread = 255;
+      break;
+    case RAINBOW:
+      offset = rainbow_offset;
+      spread = 50;
+      break;
+  }
+  for (uint16_t i = 0; i < COIL_REP; i++) {
+    if (flame_palette == PASTEL) {
+      leds.setPixelColor(i, leds.ColorHSV((offset + (intensity - 1) * spread / MAX_INTENSITY)_B, 192, val));
+    } else {
+      leds.setPixelColor(i, leds.ColorHSV((offset + (intensity - 1) * spread / MAX_INTENSITY)_B, 255, val));
+    }
+  }
+  for (uint16_t i = COIL_REP; i < LED_COUNT; i++) {
     uint16_t n = i + CELLA_I;
     // DEBUG direction
     // color = leds.ColorHSV((0)_B, 255, 10 * (u[n] + v[n] * SIN30 - w[n] * SIN30));
 
     float temp = t[n];
     if (temp > 3.8) {
-      // color = leds.ColorHSV((200)_B, 255 - (temp - 2.0) * 128, 255);
-      color = leds.ColorHSV((36)_B, 255 - (temp - 2.0) * 50, 255);
+      color = leds.ColorHSV((offset + spread)_B, 255 - (temp - 2.0) * 50, val);
     } else if (temp > 0.2) {
-      color = leds.ColorHSV((10 * (temp - 0.2))_B, 255, 255);
+      if (flame_palette == PASTEL) {
+        color = leds.ColorHSV((offset + spread / 3.6 * (temp - 0.2))_B, 192, val);
+      } else {
+        color = leds.ColorHSV((offset + spread / 3.6 * (temp - 0.2))_B, 255, val);
+      }
     } else {
-      color = leds.ColorHSV(0, 255, 100 * temp);
+      if (flame_palette == PASTEL) {
+        color = leds.ColorHSV(0, 0, 0);
+      } else {
+        color = leds.ColorHSV((offset)_B, 255, 100 * temp * val / 255);
+      }
     }
-
-    // uint16_t hue = 8000 * (t[n] / total_heat);
-    // if (hue > 40) {
-    //   hue = 40;
-    // }
-    // color = leds.ColorHSV((hue)_B, 255, 255);
     leds.setPixelColor(i, color);
   }
   leds.show();
+}
+
+void change_flame_mode() {
+  switch (flame_knob_chg) {
+    case INTENSITY:
+      knob_to_palette();
+      break;
+    case PALETTE:
+      knob_to_value();
+      break;
+    case VALUE:
+      knob_to_intensity();
+      break;
+    default:
+      knob_to_intensity();
+      break;
+  }
+}
+
+void loop_flame() {
+  uint32_t d_time = millis() - last_t;
+  last_t = millis();
+  float d_time_f = (float)d_time / 1000.0f;
+  int8_t new_intensity;
+
+  if (flame_knob_chg != INTENSITY
+      && (millis() - idle_start_t) > MODE_TIMEOUT) {
+    knob_to_intensity();
+  }
+
+  if (wheel_dir) {
+    switch (flame_knob_chg) {
+      case INTENSITY:
+        new_intensity = intensity + wheel_dir;
+        switch (wheel_dir) {
+          case -1:
+            if (new_intensity < 1) {
+              new_intensity = 1;
+            }
+            break;
+          case 1:
+            if (new_intensity > MAX_INTENSITY) {
+              new_intensity = MAX_INTENSITY;
+            }
+            break;
+        }
+        intensity = new_intensity;
+        Serial.println(intensity);
+        break;
+      case PALETTE:
+        switch (flame_palette) {
+          case NORMAL:
+            flame_palette = COOL;
+            break;
+          case COOL:
+            flame_palette = PURPLE;
+            break;
+          case PURPLE:
+            flame_palette = PASTEL;
+            break;
+          case PASTEL:
+            flame_palette = RAINBOW;
+            break;
+          case RAINBOW:
+            flame_palette = NORMAL;
+            break;
+        }
+        break;
+      case VALUE:
+        val += 4 * VAL_STEP * wheel_dir;
+        if (val < 0) {
+          val = 0;
+        }
+        if (val > 255) {
+          val = 255;
+        }
+        break;
+    }
+    wheel_dir = 0;
+  }
+
+  if (did_click) {
+    did_click = false;
+    change_flame_mode();
+  }
+
+  integrate(d_time_f);
+  poll_ui();
+
+  solve_incompressibility(3);
+  poll_ui();
+
+  heating();
+  extrapolate();
+  poll_ui();
+
+  advect_velocity(d_time_f);
+  poll_ui();
+
+  advect_temperature(d_time_f);
+  poll_ui();
+
+  cooling(d_time_f);
+  poll_ui();
+
+  // limit the framerate
+  if (millis() - last_draw_t > 30) {
+    if (should_escape_demo) {
+      should_escape_demo = false;
+      return;
+    }
+
+    draw_flame();
+    last_draw_t = millis();
+  }
+
+  if (flame_palette == RAINBOW) {
+    rainbow_offset += d_time / 10;
+    while (rainbow_offset > 255) {
+      rainbow_offset -= 256;
+    }
+  }
 }
 // *** END FLAME ***
 
@@ -693,83 +905,6 @@ void setup() {
   fill((hue)_B, sat, val);
 }
 
-void loop_solid() {
-  if (knob_chg != HUE
-      && (millis() - idle_start_t) > MODE_TIMEOUT) {
-    knob_to_hue();
-  }
-
-  if (did_click) {
-    did_click = false;
-    return change_mode();
-  }
-
-  if (wheel_dir) {
-    change_color(wheel_dir);
-    wheel_dir = 0;
-  }
-}
-
-void loop_flame() {
-  uint32_t d_time = millis() - last_t;
-  last_t = millis();
-  float d_time_f = (float)d_time / 1000.0f;
-
-  if (wheel_dir) {
-    int8_t new_intensity = intensity + wheel_dir;
-    switch (wheel_dir) {
-      case -1:
-        if (new_intensity < 1) {
-          new_intensity = 1;
-        }
-        break;
-      case 1:
-        if (new_intensity > 6) {
-          new_intensity = 6;
-        }
-        break;
-    }
-    intensity = new_intensity;
-    wheel_dir = 0;
-    Serial.println(intensity);
-  }
-
-  if (did_click) {
-    did_click = false;
-    Serial.print("did_click: "); Serial.println(did_click);
-  }
-
-  integrate(d_time_f);
-  poll_ui();
-
-  solve_incompressibility(3);
-  poll_ui();
-
-  heating();
-  extrapolate();
-  poll_ui();
-
-  advect_velocity(d_time_f);
-  poll_ui();
-
-  advect_temperature(d_time_f);
-  poll_ui();
-
-  cooling(d_time_f);
-  poll_ui();
-
-  // limit the framerate
-  if (millis() - last_draw_t > 30) {
-    if (should_escape_demo) {
-      should_escape_demo = false;
-      return;
-    }
-
-    draw_flame();
-    last_draw_t = millis();
-  }
-}
-
 void poll_ui() {
   int8_t this_wheel_dir = read_rotary();
   bool this_did_click = read_click();
@@ -792,9 +927,10 @@ void poll_ui() {
 void rotate_mode() {
   if (mode == MODE_SOLID) {
     mode = MODE_FLAME;
+    flame_knob_chg = INTENSITY;
   } else if (mode == MODE_FLAME) {
     mode = MODE_SOLID;
-    knob_chg = HUE;
+    solid_knob_chg = HUE;
     fill((hue)_B, sat, val);
   }
 }
