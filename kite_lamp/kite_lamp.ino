@@ -228,8 +228,8 @@ void change_color() {
       break;
     case VAL:
       val += VAL_STEP * wheel_dir;
-      if (val < 0) {
-        val = 0;
+      if (val < VAL_STEP) {
+        val = VAL_STEP;
       }
       if (val > 255) {
         val = 255;
@@ -335,7 +335,7 @@ void setup_flame() {
 
 void blink() {
   fill(0, 0, 0);
-  delay(50);
+  //delay(50);
 }
 
 void knob_to_intensity() {
@@ -710,26 +710,21 @@ void loop_flame() {
       case PALETTE:
         switch (flame_palette) {
           case NORMAL:
-            flame_palette = COOL;
-            break;
+            flame_palette = wheel_dir == 1 ? COOL : RAINBOW; break;
           case COOL:
-            flame_palette = PURPLE;
-            break;
+            flame_palette = wheel_dir == 1 ? PURPLE : NORMAL; break;
           case PURPLE:
-            flame_palette = PASTEL;
-            break;
+            flame_palette = wheel_dir == 1 ? PASTEL : COOL; break;
           case PASTEL:
-            flame_palette = RAINBOW;
-            break;
+            flame_palette = wheel_dir == 1 ? RAINBOW : PURPLE; break;
           case RAINBOW:
-            flame_palette = NORMAL;
-            break;
+            flame_palette = wheel_dir == 1 ? NORMAL : PASTEL; break;
         }
         break;
       case VALUE:
         val += 4 * VAL_STEP * wheel_dir;
-        if (val < 0) {
-          val = 0;
+        if (val < VAL_STEP) {
+          val = VAL_STEP;
         }
         if (val > 255) {
           val = 255;
@@ -1011,3 +1006,5 @@ int8_t read_rotary() {
   }
   return 0;
 }
+
+// "ayiwoSerial.print("a: "); Serial.println(a);jk
