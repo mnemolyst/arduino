@@ -1,3 +1,9 @@
+// TODO
+// DONE slow down sat and hue near red
+// DONE remove flame brightness mode
+// DONE add salt lamp palette
+// replace double click
+
 #define LED_COUNT 240
 
 #define DEMO
@@ -207,9 +213,13 @@ void change_solid_mode() {
 }
 
 void change_color() {
+  uint8_t step;
   switch (solid_knob_chg) {
     case HUE:
-      hue += HUE_STEP * wheel_dir;
+      step = (hue < 128) ?
+        (1 + (hue + 21) * 3 / 128) :
+        (4 - (hue - 107) * 3 / 128);
+      hue += step * wheel_dir;
       if (hue < 0) {
         hue += 256;
       }
@@ -218,7 +228,8 @@ void change_color() {
       }
       break;
     case SAT:
-      sat += SAT_STEP * wheel_dir;
+      step = 4 - (sat + 43) * 3 / 255;
+      sat += step * wheel_dir;
       if (sat < 0) {
         sat = 0;
       }
@@ -278,8 +289,7 @@ static const float _1_2SIN60 = 1.0 / (2 * SIN60);
 
 enum FLAME_KNOB_CHG {
   INTENSITY,
-  PALETTE,
-  VALUE
+  PALETTE
 };
 FLAME_KNOB_CHG flame_knob_chg = INTENSITY;
 
@@ -288,7 +298,8 @@ enum FLAME_PALETTE {
   COOL,
   PURPLE,
   PASTEL,
-  RAINBOW
+  RAINBOW,
+  SALTLAMP
 };
 FLAME_PALETTE flame_palette = NORMAL;
 
@@ -345,11 +356,6 @@ void knob_to_intensity() {
 
 void knob_to_palette() {
   flame_knob_chg = PALETTE;
-  blink();
-}
-
-void knob_to_value() {
-  flame_knob_chg = VALUE;
   blink();
 }
 
@@ -605,6 +611,7 @@ void draw_flame() {
   uint32_t color;
   uint8_t offset;
   uint8_t spread;
+  uint8_t saturation = 255;
   switch (flame_palette) {
     case NORMAL:
       offset = 0;
@@ -621,33 +628,28 @@ void draw_flame() {
     case PASTEL:
       offset = 0;
       spread = 255;
+      saturation = 192;
       break;
     case RAINBOW:
       offset = rainbow_offset;
       spread = 50;
       break;
+    case SALTLAMP:
+      offset = 0;
+      spread = 8;
+      saturation = 225;
   }
   for (uint16_t i = 0; i < COIL_REP; i++) {
-    if (flame_palette == PASTEL) {
-      leds.setPixelColor(i, leds.ColorHSV((offset + (intensity - 1) * spread / MAX_INTENSITY)_B, 192, val));
-    } else {
-      leds.setPixelColor(i, leds.ColorHSV((offset + (intensity - 1) * spread / MAX_INTENSITY)_B, 255, val));
-    }
+    leds.setPixelColor(i, leds.ColorHSV((offset + (intensity - 1) * spread / MAX_INTENSITY)_B, saturation, val));
   }
   for (uint16_t i = COIL_REP; i < LED_COUNT; i++) {
     uint16_t n = i + CELLA_I;
-    // DEBUG direction
-    // color = leds.ColorHSV((0)_B, 255, 10 * (u[n] + v[n] * SIN30 - w[n] * SIN30));
 
     float temp = t[n];
     if (temp > 3.8) {
       color = leds.ColorHSV((offset + spread)_B, 255 - (temp - 2.0) * 50, val);
     } else if (temp > 0.2) {
-      if (flame_palette == PASTEL) {
-        color = leds.ColorHSV((offset + spread / 3.6 * (temp - 0.2))_B, 192, val);
-      } else {
-        color = leds.ColorHSV((offset + spread / 3.6 * (temp - 0.2))_B, 255, val);
-      }
+      color = leds.ColorHSV((offset + spread / 3.6 * (temp - 0.2))_B, saturation, val);
     } else {
       if (flame_palette == PASTEL) {
         color = leds.ColorHSV(0, 0, 0);
@@ -655,6 +657,8 @@ void draw_flame() {
         color = leds.ColorHSV((offset)_B, 255, 100 * temp * val / 255);
       }
     }
+    // DEBUG velocities
+    // color = leds.ColorHSV((0)_B, 255, 10 * (u[n] + v[n] * SIN30 - w[n] * SIN30));
     leds.setPixelColor(i, color);
   }
   leds.show();
@@ -666,9 +670,6 @@ void change_flame_mode() {
       knob_to_palette();
       break;
     case PALETTE:
-      knob_to_value();
-      break;
-    case VALUE:
       knob_to_intensity();
       break;
     default:
@@ -710,7 +711,7 @@ void loop_flame() {
       case PALETTE:
         switch (flame_palette) {
           case NORMAL:
-            flame_palette = wheel_dir == 1 ? COOL : RAINBOW; break;
+            flame_palette = wheel_dir == 1 ? COOL : SALTLAMP; break;
           case COOL:
             flame_palette = wheel_dir == 1 ? PURPLE : NORMAL; break;
           case PURPLE:
@@ -718,16 +719,9 @@ void loop_flame() {
           case PASTEL:
             flame_palette = wheel_dir == 1 ? RAINBOW : PURPLE; break;
           case RAINBOW:
-            flame_palette = wheel_dir == 1 ? NORMAL : PASTEL; break;
-        }
-        break;
-      case VALUE:
-        val += 4 * VAL_STEP * wheel_dir;
-        if (val < VAL_STEP) {
-          val = VAL_STEP;
-        }
-        if (val > 255) {
-          val = 255;
+            flame_palette = wheel_dir == 1 ? SALTLAMP : PASTEL; break;
+          case SALTLAMP:
+            flame_palette = wheel_dir == 1 ? NORMAL : RAINBOW; break;
         }
         break;
     }
