@@ -1,7 +1,4 @@
 // TODO
-// DONE slow down sat and hue near red
-// DONE remove flame brightness mode
-// DONE add salt lamp palette
 // replace double click
 
 #define LED_COUNT 240
@@ -508,14 +505,19 @@ void solve_incompressibility(uint8_t nIters) {
 }
 
 void heating() {
+  // if (millis() - last_heat_change > 1000) {
+  //   last_heat_change = millis();
+  // }
+
+  float t_add = 0.5f + intensity * 0.4f;
   for (uint16_t i = CELLA_I; i < CELLA_I + COIL_REP - 1; i++) {
     if (random8(6) == 0) {
-      t[i] += 0.5f + intensity * 0.4f;
+      t[i] += t_add;
     }
   }
   for (uint16_t i = CELLA_I + COIL_REP + 1; i < CELLA_I + 2 * COIL_REP - 2; i++) {
     if (random8(6) == 0) {
-      t[i] += 0.5f + intensity * 0.4f;
+      t[i] += t_add;
     }
   }
 }
@@ -686,7 +688,7 @@ void loop_flame() {
 
   if (flame_knob_chg != INTENSITY
       && (millis() - idle_start_t) > MODE_TIMEOUT) {
-    knob_to_intensity();
+    knob_to_palette();
   }
 
   if (wheel_dir) {
