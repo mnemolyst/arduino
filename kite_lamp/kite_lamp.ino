@@ -686,7 +686,7 @@ void loop_flame() {
   float d_time_f = (float)d_time / 1000.0f;
   int8_t new_intensity;
 
-  if (flame_knob_chg != INTENSITY
+  if (flame_knob_chg != PALETTE
       && (millis() - idle_start_t) > MODE_TIMEOUT) {
     knob_to_palette();
   }
@@ -918,7 +918,7 @@ void poll_ui() {
 void rotate_mode() {
   if (mode == MODE_SOLID) {
     mode = MODE_FLAME;
-    flame_knob_chg = INTENSITY;
+    flame_knob_chg = PALETTE;
   } else if (mode == MODE_FLAME) {
     mode = MODE_SOLID;
     solid_knob_chg = HUE;
