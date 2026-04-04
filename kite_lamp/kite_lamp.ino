@@ -317,7 +317,6 @@ uint32_t last_t;
 uint32_t last_draw_t;
 
 uint32_t last_heat_change = 0;
-uint32_t next_wind_change = 0;
 int8_t wind_dir = 1;
 uint8_t intensity = 1;
 float total_heat;
@@ -457,17 +456,17 @@ float sample_temp(float px, float py) {
 
 // add gravity, lift, and wind forces
 void integrate(float dt) {
+  uint32_t mils = millis();
   float net_swirl = 0;
   float wind_push;
-  if (millis() > next_wind_change) {
-    next_wind_change = millis() + 1000 + random16(9000);
-    wind_dir = -wind_dir;
-  }
   for (uint16_t i = CELLA_I; i <= CELLZ_I; i++) {
     // check the signs on u and v compared to incompressibility!
     net_swirl += u[i] + (v[i] - w[i]) * SIN30;
   }
-  wind_push = (net_swirl / LED_COUNT * 0.5) - (3 * intensity * wind_dir);
+  uint16_t millis16 = mils >> 2;
+  uint8_t u_noise = inoise8(millis16);
+  int8_t wind = ((u_noise - 128) >> 4) * intensity;
+  wind_push = (net_swirl / LED_COUNT * 0.5) - wind;
 
   for (uint16_t i = CELLA_I; i <= CELLZ_I; i++) {
     float fall = -G * dt;
