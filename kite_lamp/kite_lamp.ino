@@ -312,6 +312,7 @@ float new_v[N_CELLS];
 float new_w[N_CELLS];
 float t[N_CELLS];
 float new_t[N_CELLS];
+uint16_t solve_order[CELLZ_I + 1 - CELLA_I];
 
 uint32_t last_t;
 uint32_t last_draw_t;
@@ -337,6 +338,15 @@ void setup_flame() {
     cell_n_to_xy(i, &cx, &cy);
     cell_x[i] = cx;
     cell_y[i] = cy;
+  }
+  for (uint16_t i = 0; i < CELLZ_I + 1 - CELLA_I; i++) {
+    solve_order[i] = i;
+  }
+  for (uint16_t i = 0; i < CELLZ_I + 1 - CELLA_I; i++) {
+    uint16_t j = random16(i);
+    uint16_t swap = solve_order[i];
+    solve_order[i] = solve_order[j];
+    solve_order[j] = swap;
   }
 }
 
@@ -480,25 +490,26 @@ void integrate(float dt) {
 
 void solve_incompressibility(uint8_t nIters) {
   for (uint8_t iter = 0; iter < nIters; iter++) {
-    for (uint16_t i = CELLA_I; i <= CELLZ_I; i++) {
-      uint8_t su1 = get_s(i - 1);
-      uint8_t su2 = get_s(i + 1);
-      uint8_t sv1 = get_s(i - COIL_REP);
-      uint8_t sv2 = get_s(i + COIL_REP);
-      uint8_t sw1 = get_s(i - COIL_REP + 1);
-      uint8_t sw2 = get_s(i + COIL_REP - 1);
+    for (uint16_t i = 0; i < CELLZ_I + 1 - CELLA_I; i++) {
+      uint16_t j = solve_order[i];
+      uint8_t su1 = get_s(j - 1);
+      uint8_t su2 = get_s(j + 1);
+      uint8_t sv1 = get_s(j - COIL_REP);
+      uint8_t sv2 = get_s(j + COIL_REP);
+      uint8_t sw1 = get_s(j - COIL_REP + 1);
+      uint8_t sw2 = get_s(j + COIL_REP - 1);
       uint8_t s = su1 + su2 + sv1 + sv2 + sw1 + sw2;
       if (s == 0) { return; }
 
-      float div = u[i] - u[i - 1] + v[i] - v[i - COIL_REP] + w[i] - w[i - COIL_REP + 1];
+      float div = u[j] - u[j - 1] + v[j] - v[j - COIL_REP] + w[j] - w[j - COIL_REP + 1];
       float push = -div / s * OVERRELAX;
-      u[i] += push * su2;
-      u[i - 1] -= push * su1;
-      v[i] += push * sv2;
-      v[i - COIL_REP] -= push * sv1;
-      w[i] += push * sw2;
-      w[i - COIL_REP + 1] -= push * sw1;
-      div = u[i] - u[i - 1] + v[i] - v[i - COIL_REP] + w[i] - w[i - COIL_REP + 1];
+      u[j] += push * su2;
+      u[j - 1] -= push * su1;
+      v[j] += push * sv2;
+      v[j - COIL_REP] -= push * sv1;
+      w[j] += push * sw2;
+      w[j - COIL_REP + 1] -= push * sw1;
+      div = u[j] - u[j - 1] + v[j] - v[j - COIL_REP] + w[j] - w[j - COIL_REP + 1];
     }
   }
 }
@@ -707,7 +718,7 @@ void loop_flame() {
             break;
         }
         intensity = new_intensity;
-        Serial.println(intensity);
+        Serial.print("intensity: "); Serial.println(intensity);
         break;
       case PALETTE:
         switch (flame_palette) {
