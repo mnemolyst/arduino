@@ -39,7 +39,7 @@ enum MODE {
   MODE_FLAME
 };
 
-MODE mode = MODE_SOLID;
+MODE mode = MODE_FLAME;
 
 // *** START SOLID ***
 enum SOLID_KNOB_CHG {
@@ -49,7 +49,7 @@ enum SOLID_KNOB_CHG {
 };
 SOLID_KNOB_CHG solid_knob_chg = VAL;
 
-int32_t hue = 6;
+int16_t hue = 6;
 int16_t sat = 224;
 int16_t val = 20;
 
@@ -209,13 +209,17 @@ void change_solid_mode() {
   }
 }
 
+uint8_t even_hue_step(uint16_t _hue) {
+  return (_hue < 128) ?
+    (1 + (_hue + 21) * 3 / 128) :
+    (4 - (_hue - 107) * 3 / 128);
+}
+
 void change_color() {
   uint8_t step;
   switch (solid_knob_chg) {
     case HUE:
-      step = (hue < 128) ?
-        (1 + (hue + 21) * 3 / 128) :
-        (4 - (hue - 107) * 3 / 128);
+      step = even_hue_step(hue);
       hue += step * wheel_dir;
       if (hue < 0) {
         hue += 256;
@@ -288,7 +292,7 @@ enum FLAME_KNOB_CHG {
   INTENSITY,
   PALETTE
 };
-FLAME_KNOB_CHG flame_knob_chg = INTENSITY;
+FLAME_KNOB_CHG flame_knob_chg = PALETTE;
 
 enum FLAME_PALETTE {
   NORMAL,
@@ -319,7 +323,7 @@ uint32_t last_draw_t;
 
 uint32_t last_heat_change = 0;
 int8_t wind_dir = 1;
-uint8_t intensity = 1;
+uint8_t intensity = 4;
 float total_heat;
 uint16_t rainbow_offset = 0;
 
@@ -515,20 +519,20 @@ void solve_incompressibility(uint8_t nIters) {
 }
 
 void heating() {
-  // if (millis() - last_heat_change > 1000) {
-  //   last_heat_change = millis();
-  // }
+  const static uint8_t n_p = 2 * COIL_REP - 2;
+  static uint8_t p_data[n_p];
+  uint16_t millis16 = millis();
+  for (uint8_t i = 0; i < n_p; i++) {
+    p_data[i] = 0;
+  }
+  fill_raw_noise8(p_data, n_p, 1, 0, 1200, millis16);
 
-  float t_add = 0.5f + intensity * 0.4f;
+  const float p_mul = 0.001f + intensity * 0.0008f;
   for (uint16_t i = CELLA_I; i < CELLA_I + COIL_REP - 1; i++) {
-    if (random8(6) == 0) {
-      t[i] += t_add;
-    }
+    t[i] += p_data[i - CELLA_I] * p_mul;
   }
   for (uint16_t i = CELLA_I + COIL_REP + 1; i < CELLA_I + 2 * COIL_REP - 2; i++) {
-    if (random8(6) == 0) {
-      t[i] += t_add;
-    }
+    t[i] += p_data[i - CELLA_I] * p_mul;
   }
 }
 
@@ -644,7 +648,7 @@ void draw_flame() {
       break;
     case RAINBOW:
       offset = rainbow_offset;
-      spread = 50;
+      spread = 80;
       break;
     case SALTLAMP:
       offset = 0;
@@ -698,7 +702,7 @@ void loop_flame() {
 
   if (flame_knob_chg != PALETTE
       && (millis() - idle_start_t) > MODE_TIMEOUT) {
-    knob_to_palette();
+    flame_knob_chg = PALETTE;
   }
 
   if (wheel_dir) {
@@ -776,8 +780,12 @@ void loop_flame() {
   }
 
   if (flame_palette == RAINBOW) {
-    rainbow_offset += d_time / 10;
-    while (rainbow_offset > 255) {
+    int16_t offset_ref = rainbow_offset + 40;
+    if (offset_ref > 255) {
+      offset_ref -= 256;
+    }
+    rainbow_offset += even_hue_step(offset_ref) * d_time / 40;
+    if (rainbow_offset > 255) {
       rainbow_offset -= 256;
     }
   }
