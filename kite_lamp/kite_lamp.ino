@@ -525,7 +525,7 @@ void heating() {
   for (uint8_t i = 0; i < n_p; i++) {
     p_data[i] = 0;
   }
-  fill_raw_noise8(p_data, n_p, 1, 0, 1200, millis16);
+  fill_raw_noise8(p_data, n_p, 1, 0, 10, millis16 >> 2);
 
   const float p_mul = 0.001f + intensity * 0.0008f;
   for (uint16_t i = CELLA_I; i < CELLA_I + COIL_REP - 1; i++) {
