@@ -1,4 +1,7 @@
 # Collection of Arduino projects
+## dancefloor
+Basic rainbow demo for dancefloor sub-lighting.
+
 ## dining_light
 Complicated system of menus to fine-tune whole-room lighting
 
