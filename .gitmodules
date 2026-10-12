@@ -1,0 +1,3 @@
+[submodule "flame_lamp"]
+	path = flame_lamp
+	url = https://github.com/mnemolyst/flame_lamp.git
