@@ -9,7 +9,7 @@ Complicated system of menus to fine-tune whole-room lighting
 Version 1 of the flame lamp demo, without the solid mode. Obsolete in favor of kite_lamp.
 
 ## kite_lamp
-Version 2 of the flame lamp, with solid mode and various other improvements. Now the main avenue of development.
+Version 2 of the flame lamp, with solid mode and various other improvements. Now the main avenue of development.\
 ![video of kite_lamp running](./kite_lamp.gif)
 
 ## led_chandelier
